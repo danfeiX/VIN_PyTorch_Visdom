@@ -59,7 +59,8 @@ parser.add_argument('--batch_size',
 args = parser.parse_args()
 
 # Instantiate a VIN model
-net = VIN(args)
+# net = VIN(args)
+net = FCN(args)
 
 if use_GPU:
      net = net.cuda()
@@ -85,6 +86,7 @@ for epoch in range(args.epochs): # Loop over dataset multiple times
     running_losses = []
 
     start_time = time.time()
+    net.train()
     for i, data in enumerate(trainloader): # Loop over batches of data
         # Get input batch
         X, S1, S2, labels = data
@@ -125,44 +127,41 @@ for epoch in range(args.epochs): # Loop over dataset multiple times
     # Print epoch logs
     print('[Epoch # {:3d} ({:.1f} s)] Loss: {:.4f}'.format(epoch + 1, time_duration, np.mean(running_losses)))
 
+    correct = 0
+    total = 0
+    net.eval()
+    for i, data in enumerate(testloader):
+        # Get inputs
+        X, S1, S2, labels = data
+
+        if X.size()[0] != args.batch_size: # TODO: Bug with DataLoader
+            continue # Drop those data, if not enough for a batch
+
+        # Send Tensors to GPU if available
+        if use_GPU:
+            X = X.cuda()
+            S1 = S1.cuda()
+            S2 = S2.cuda()
+            labels = labels.cuda()
+
+        # Wrap to autograd.Variable
+        X, S1, S2 = Variable(X), Variable(S1), Variable(S2)
+
+        # Forward pass
+        outputs = net(X, S1, S2, args)
+
+        # Select actions with max scores(logits)
+        _, predicted = torch.max(outputs, dim=1)
+        # Compute test accuracy
+        correct += (predicted == labels).float().sum().item()
+        total += float(labels.size()[0]) # args.batch_size*num_batches, TODO: Check if DataLoader drop rest examples less than batch_size
+
+    print('Test Accuracy (with {} examples): {}%'.format(total, 100*(correct/total)))
+    print('\nFinished testing.\n')
+
 print('\nFinished training. \n')
 
 # Testing...
-
-correct = 0
-total = 0
-for i, data in enumerate(testloader):
-    # Get inputs
-    X, S1, S2, labels = data
-
-    if X.size()[0] != args.batch_size: # TODO: Bug with DataLoader
-        continue # Drop those data, if not enough for a batch
-
-    # Send Tensors to GPU if available
-    if use_GPU:
-        X = X.cuda()
-        S1 = S1.cuda()
-        S2 = S2.cuda()
-        labels = labels.cuda()
-
-    # Wrap to autograd.Variable
-    X, S1, S2 = Variable(X), Variable(S1), Variable(S2)
-
-    # Forward pass
-    outputs = net(X, S1, S2, args)
-
-    # Select actions with max scores(logits)
-    _, predicted = torch.max(outputs, dim=1)
-
-    # Unwrap autograd.Variable to Tensor
-    predicted = predicted.data
-
-    # Compute test accuracy
-    correct += (predicted == labels).sum()
-    total += labels.size()[0] # args.batch_size*num_batches, TODO: Check if DataLoader drop rest examples less than batch_size
-
-print('Test Accuracy (with {:d} examples): {:.2f}%'.format(total, 100*(correct/total)))
-print('\nFinished testing.\n')
 
 # Compute reward image and its value images for test sample
 

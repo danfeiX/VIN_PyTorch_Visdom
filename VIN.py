@@ -99,3 +99,50 @@ class VIN(nn.Module):
         logits = self.fc1(q_out)
 
         return logits
+
+class FCN(nn.Module):
+    def __init__(self, args):
+        super(FCN, self).__init__()
+
+        # First hidden Conv layer
+        self.conv_h = nn.Conv2d(in_channels=args.ch_i,
+                                out_channels=150,
+                                kernel_size=31,
+                                stride=1,
+                                padding=(31 - 1)//2, # SAME padding: (F - 1)/2
+                                bias=True)
+        # Conv layer to generate reward image
+        self.conv_r = nn.Conv2d(in_channels=150,
+                                out_channels=150,
+                                kernel_size=1,
+                                stride=1,
+                                bias=True)
+        # q layers in VI module
+        self.conv_q = nn.Conv2d(in_channels=150, # stack [r, v] -> 2 channels
+                                out_channels=args.ch_q,
+                                kernel_size=1,
+                                stride=1,
+                                bias=True)
+        # Final fully connected layer
+        self.fc1 = nn.Linear(in_features=args.ch_q, # After attention model -> Q(s, .) for q layers
+                             out_features=8, # 8 available actions
+                             bias=False)
+
+        # Record grid image, reward image and its value images for each VI iteration
+        self.grid_image = None
+        self.reward_image = None
+        self.value_images = []
+
+    def forward(self, X, S1, S2, args, record_images=False):
+        # Get reward image from observation image
+        h = self.conv_h(X)
+        r = self.conv_r(h)
+        q = self.conv_q(r)
+
+        # Attention model
+        q_out = attention(q, [S1.long(), S2.long(), args])
+
+        # Final Fully Connected layer
+        logits = self.fc1(q_out)
+
+        return logits
